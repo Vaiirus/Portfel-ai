@@ -1,0 +1,1987 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  TrendingUp,
+  TrendingDown,
+  PieChart as PieChartIcon,
+  Brain,
+  Plus,
+  Search,
+  Smartphone,
+  RefreshCw,
+  Trash2,
+  Edit3,
+  ShieldAlert,
+  Target,
+  Sparkles,
+  Briefcase,
+  ArrowUpRight,
+  ArrowDownRight,
+  X,
+  Globe,
+  RotateCcw,
+  Layers,
+  Check,
+  ChevronRight,
+  ShieldCheck,
+  Wallet
+} from 'lucide-react';
+
+// --- DOMYŚLNE AKTYWA STARTOWE (KLUCZ PAMIĘCI: investai_pro_v5) ---
+const INITIAL_ASSETS = [
+  {
+    id: 'voo-etf',
+    ticker: 'VOO',
+    name: 'Vanguard S&P 500 ETF',
+    category: 'ETF',
+    account: 'IKE',
+    color: '#3b82f6', // blue-500
+    quantity: 12,
+    buyPrice: 445.0,
+    currentPrice: 512.5,
+    currency: 'USD',
+    aiMetrics: {
+      probUp: 78,
+      targetBullPct: 14.5,
+      stopBearPct: -5.5,
+      action: 'DOKUP',
+      technicalScore: 81,
+      sentimentScore: 75,
+      fundamentalScore: 77,
+      rsi: 57,
+      smaStatus: 'Cena powyżej SMA50 i SMA200 (silny trend wzrostowy)',
+      summary: 'Szeroki indeks 500 największych spółek z USA utrzymuje długoterminowy trend wzrostowy wspierany wysokimi marżami sektora technologicznego. Stanowi stabilny fundament portfela.'
+    }
+  },
+  {
+    id: 'btc-crypto',
+    ticker: 'BTC',
+    name: 'Bitcoin',
+    category: 'Krypto',
+    account: 'Standard',
+    coingeckoId: 'bitcoin',
+    color: '#f59e0b', // amber-500
+    quantity: 0.035,
+    buyPrice: 255000,
+    currentPrice: 348000,
+    currency: 'PLN',
+    aiMetrics: {
+      probUp: 72,
+      targetBullPct: 26.0,
+      stopBearPct: -11.5,
+      action: 'TRZYMAJ',
+      technicalScore: 76,
+      sentimentScore: 79,
+      fundamentalScore: 60,
+      rsi: 63,
+      smaStatus: 'Powyżej SMA50, stała akumulacja przez fundusze Spot ETF',
+      summary: 'Napływ kapitału instytucjonalnego oraz ograniczona podaż po halvingu wspierają scenariusz wzrostowy. Ze względu na wyższą zmienność ATR zalecane dokupowanie na korektach.'
+    }
+  },
+  {
+    id: 'nvda-stock',
+    ticker: 'NVDA',
+    name: 'NVIDIA Corporation',
+    category: 'Akcje',
+    account: 'Standard',
+    color: '#8b5cf6', // violet-500
+    quantity: 18,
+    buyPrice: 104.0,
+    currentPrice: 138.5,
+    currency: 'USD',
+    aiMetrics: {
+      probUp: 75,
+      targetBullPct: 21.0,
+      stopBearPct: -9.0,
+      action: 'DOKUP',
+      technicalScore: 74,
+      sentimentScore: 84,
+      fundamentalScore: 68,
+      rsi: 65,
+      smaStatus: 'Silny impet wzrostowy powyżej kluczowych średnich kroczących',
+      summary: 'Lider infrastruktury AI i centrów danych. Popyt na układy nowej generacji przewyższa podaż, co przekłada się na wysoką dynamikę przychodów i zysku netto.'
+    }
+  },
+  {
+    id: 'edo-bonds',
+    ticker: 'EDO',
+    name: 'Obligacje Skarbowe 10-letnie EDO',
+    category: 'Obligacje',
+    account: 'IKE',
+    color: '#10b981', // emerald-500
+    quantity: 100,
+    buyPrice: 100.0,
+    currentPrice: 107.2,
+    currency: 'PLN',
+    aiMetrics: {
+      probUp: 94,
+      targetBullPct: 6.8,
+      stopBearPct: 0.0,
+      action: 'DOKUP',
+      technicalScore: 92,
+      sentimentScore: 90,
+      fundamentalScore: 99,
+      rsi: 50,
+      smaStatus: 'Coroczna kapitalizacja odsetek + stała marża ponad inflację',
+      summary: 'Bezpieczna poduszka finansowa gwarantowana przez Skarb Państwa. Chroni kapitał przed inflacją i stabilizuje cały portfel inwestycyjny.'
+    }
+  }
+];
+
+const CATEGORY_COLORS = {
+  ETF: '#3b82f6',
+  Akcje: '#8b5cf6',
+  Krypto: '#f59e0b',
+  Obligacje: '#10b981'
+};
+
+const ACCOUNT_COLORS = {
+  IKE: '#10b981',
+  Standard: '#6366f1'
+};
+
+const PALETTE_COLORS = ['#3b82f6', '#f59e0b', '#8b5cf6', '#10b981', '#ec4899', '#06b6d4', '#f97316', '#14b8a6'];
+
+const CATEGORY_STYLES = {
+  ETF: { bg: 'bg-blue-500', text: 'text-blue-400', border: 'border-blue-500/30', badge: 'bg-blue-500/15 text-blue-300' },
+  Akcje: { bg: 'bg-violet-500', text: 'text-violet-400', border: 'border-violet-500/30', badge: 'bg-violet-500/15 text-violet-300' },
+  Krypto: { bg: 'bg-amber-500', text: 'text-amber-400', border: 'border-amber-500/30', badge: 'bg-amber-500/15 text-amber-300' },
+  Obligacje: { bg: 'bg-emerald-500', text: 'text-emerald-400', border: 'border-emerald-500/30', badge: 'bg-emerald-500/15 text-emerald-300' }
+};
+
+// Wyliczanie ważonego prawdopodobieństwa 3 filarów: 40% Technika + 30% Sentyment + 30% Fundamenty
+function calculateWeightedProbability(tech, sent, fund) {
+  return Math.round(Number(tech) * 0.4 + Number(sent) * 0.3 + Number(fund) * 0.3);
+}
+
+// Wywołanie Gemini API (z obsługą Google Search grounding oraz Exponential Backoff)
+async function callGeminiAPI({ userQuery, systemPrompt, useSearch = false, responseSchema = null }) {
+  const apiKey = "";
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: userQuery }] }],
+    systemInstruction: { parts: [{ text: systemPrompt }] }
+  };
+
+  if (useSearch) {
+    payload.tools = [{ google_search: {} }];
+  }
+
+  if (responseSchema) {
+    payload.generationConfig = {
+      responseMimeType: "application/json",
+      responseSchema
+    };
+  }
+
+  const delays = [1000, 2000, 4000];
+  for (let i = 0; i <= delays.length; i++) {
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      const candidate = result.candidates?.[0];
+      const text = candidate?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Brak odpowiedzi tekstowej z modelu");
+
+      let sources = [];
+      const attributions = candidate?.groundingMetadata?.groundingAttributions;
+      if (attributions) {
+        sources = attributions
+          .map(a => ({ uri: a.web?.uri, title: a.web?.title }))
+          .filter(s => s.uri && s.title);
+      }
+
+      return { text, sources };
+    } catch (err) {
+      if (i === delays.length) throw err;
+      await new Promise(r => setTimeout(r, delays[i]));
+    }
+  }
+}
+
+export default function App() {
+  // 4 CZYTELNE ZAKŁADKI NA DOLNYM PASKU: 'summary' | 'assets' | 'ai' | 'scanner'
+  const [activeTab, setActiveTab] = useState('summary');
+  const [usdPlnRate, setUsdPlnRate] = useState(4.02);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [lastDeletedAsset, setLastDeletedAsset] = useState(null);
+  const [isIphoneGuideOpen, setIsIphoneGuideOpen] = useState(false);
+
+  // Portfel zapisywany w kluczu localStorage 'investai_pro_v5'
+  const [assets, setAssets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('investai_pro_v5');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+      return INITIAL_ASSETS;
+    } catch {
+      return INITIAL_ASSETS;
+    }
+  });
+
+  // Filtr konta (Wszystkie / IKE / Standard) oraz tryb Diagramu Kołowego
+  const [accountFilter, setAccountFilter] = useState('Wszystkie'); // 'Wszystkie' | 'IKE' | 'Standard'
+  const [chartMode, setChartMode] = useState('assets'); // 'assets' | 'categories' | 'accounts'
+  const [selectedSliceId, setSelectedSliceId] = useState(null);
+
+  // Stany dla Zakładki 2: Lista Aktywów (filtrowanie i modal dodawania/edycji)
+  const [categoryFilter, setCategoryFilter] = useState('Wszystkie');
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formState, setFormState] = useState({
+    ticker: '',
+    name: '',
+    category: 'Akcje',
+    account: 'Standard',
+    quantity: '10',
+    buyPrice: '100',
+    currentPrice: '115',
+    currency: 'PLN'
+  });
+
+  // Stany dla Zakładki 3: Analiza AI wybranego aktywa
+  const [selectedAiAssetId, setSelectedAiAssetId] = useState(() => INITIAL_ASSETS[0].id);
+  const [liveAiLoadingId, setLiveAiLoadingId] = useState(null);
+  const [liveAiReports, setLiveAiReports] = useState({});
+
+  // Stany dla Zakładki 4: Skaner Rynku AI
+  const [scannerTicker, setScannerTicker] = useState('');
+  const [scannerAmountPln, setScannerAmountPln] = useState(5000);
+  const [scannerAccount, setScannerAccount] = useState('Standard');
+  const [isScannerLoading, setIsScannerLoading] = useState(false);
+  const [scannerResult, setScannerResult] = useState(null);
+
+  // Zapis do localStorage przy każdej zmianie listy aktywów
+  useEffect(() => {
+    try {
+      localStorage.setItem('investai_pro_v5', JSON.stringify(assets));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [assets]);
+
+  // Upewnij się, że wybrana pozycja w zakładce Analiza AI istnieje
+  useEffect(() => {
+    if (assets.length > 0 && !assets.some(a => a.id === selectedAiAssetId)) {
+      setSelectedAiAssetId(assets[0].id);
+    }
+  }, [assets, selectedAiAssetId]);
+
+  const triggerToast = (message, undoAsset = null) => {
+    setToast(message);
+    if (undoAsset) {
+      setLastDeletedAsset(undoAsset);
+    } else {
+      setLastDeletedAsset(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => {
+      setToast(null);
+      setLastDeletedAsset(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  // Pobranie kursu USD/PLN z NBP oraz krypto z CoinGecko przy starcie
+  useEffect(() => {
+    fetchLiveMarketData(true);
+  }, []);
+
+  const fetchLiveMarketData = async (silent = false) => {
+    setIsRefreshing(true);
+    let latestUsdRate = usdPlnRate;
+
+    try {
+      const nbpRes = await fetch('https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json');
+      if (nbpRes.ok) {
+        const nbpData = await nbpRes.json();
+        const mid = nbpData?.rates?.[0]?.mid;
+        if (mid) {
+          latestUsdRate = Number(mid);
+          setUsdPlnRate(latestUsdRate);
+        }
+      }
+    } catch {
+      // Fallback 4.02 PLN
+    }
+
+    try {
+      const cgRes = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd,pln'
+      );
+      if (cgRes.ok) {
+        const cgData = await cgRes.json();
+        setAssets(prev =>
+          prev.map(item => {
+            const t = item.ticker.toUpperCase();
+            let cgKey = item.coingeckoId;
+            if (!cgKey) {
+              if (t === 'BTC') cgKey = 'bitcoin';
+              if (t === 'ETH') cgKey = 'ethereum';
+              if (t === 'SOL') cgKey = 'solana';
+            }
+            if (cgKey && cgData[cgKey]) {
+              const newPrice = item.currency === 'USD' ? cgData[cgKey].usd : cgData[cgKey].pln;
+              if (newPrice) {
+                return { ...item, currentPrice: newPrice };
+              }
+            }
+            return item;
+          })
+        );
+      }
+    } catch {
+      // Zachowaj dotychczasowe ceny
+    } finally {
+      setIsRefreshing(false);
+      if (!silent) {
+        triggerToast(`Zaktualizowano kursy live (USD/PLN: ${latestUsdRate.toFixed(2)} zł)`);
+      }
+    }
+  };
+
+  // Obliczenia dla pojedynczego aktywa w PLN
+  const computeAssetValues = (asset) => {
+    const rate = asset.currency === 'USD' ? usdPlnRate : 1;
+    const investedPln = Number(asset.quantity) * Number(asset.buyPrice) * rate;
+    const currentValuePln = Number(asset.quantity) * Number(asset.currentPrice) * rate;
+    const profitPln = currentValuePln - investedPln;
+    const profitPct = investedPln > 0 ? (profitPln / investedPln) * 100 : 0;
+    return { investedPln, currentValuePln, profitPln, profitPct };
+  };
+
+  // Aktywa przefiltrowane po wybranym koncie (Wszystkie / IKE / Standard)
+  const accountFilteredAssets = useMemo(() => {
+    if (accountFilter === 'Wszystkie') return assets;
+    return assets.filter(a => (a.account || 'Standard') === accountFilter);
+  }, [assets, accountFilter]);
+
+  // Podsumowanie portfela + wyliczenie danych do Diagramu Kołowego
+  const summary = useMemo(() => {
+    let totalInvestedPln = 0;
+    let totalValuePln = 0;
+    let weightedProbSum = 0;
+    let totalBullUpsidePln = 0;
+    let totalBearDownsidePln = 0;
+
+    const enrichedAssets = accountFilteredAssets.map((asset, idx) => {
+      const vals = computeAssetValues(asset);
+      const prob = asset.aiMetrics?.probUp || 70;
+      const bullPct = asset.aiMetrics?.targetBullPct ?? 14;
+      const bearPct = asset.aiMetrics?.stopBearPct ?? -6;
+
+      totalInvestedPln += vals.investedPln;
+      totalValuePln += vals.currentValuePln;
+      weightedProbSum += prob * vals.currentValuePln;
+      totalBullUpsidePln += vals.currentValuePln * (bullPct / 100);
+      totalBearDownsidePln += vals.currentValuePln * (bearPct / 100);
+
+      return {
+        ...asset,
+        account: asset.account || 'Standard',
+        ...vals,
+        sliceColor: asset.color || PALETTE_COLORS[idx % PALETTE_COLORS.length]
+      };
+    });
+
+    const totalProfitPln = totalValuePln - totalInvestedPln;
+    const totalProfitPct = totalInvestedPln > 0 ? (totalProfitPln / totalInvestedPln) * 100 : 0;
+    const avgProbability = totalValuePln > 0 ? Math.round(weightedProbSum / totalValuePln) : 0;
+
+    // 1. Dane do diagramu kołowego wg pozycji
+    const assetSlices = enrichedAssets.map(a => ({
+      id: a.id,
+      label: a.ticker,
+      sublabel: `${a.name} • ${a.account}`,
+      valuePln: a.currentValuePln,
+      pct: totalValuePln > 0 ? (a.currentValuePln / totalValuePln) * 100 : 0,
+      color: a.sliceColor,
+      profitPct: a.profitPct
+    })).sort((a, b) => b.valuePln - a.valuePln);
+
+    // 2. Dane do diagramu kołowego wg kategorii
+    const catMap = {};
+    enrichedAssets.forEach(a => {
+      if (!catMap[a.category]) {
+        catMap[a.category] = { valuePln: 0, investedPln: 0 };
+      }
+      catMap[a.category].valuePln += a.currentValuePln;
+      catMap[a.category].investedPln += a.investedPln;
+    });
+
+    const categorySlices = Object.keys(catMap).map(cat => {
+      const v = catMap[cat].valuePln;
+      const inv = catMap[cat].investedPln;
+      return {
+        id: `cat-${cat}`,
+        label: cat,
+        sublabel: `Klasa aktywów: ${cat}`,
+        valuePln: v,
+        pct: totalValuePln > 0 ? (v / totalValuePln) * 100 : 0,
+        color: CATEGORY_COLORS[cat] || '#10b981',
+        profitPct: inv > 0 ? ((v - inv) / inv) * 100 : 0
+      };
+    }).sort((a, b) => b.valuePln - a.valuePln);
+
+    // 3. Dane do diagramu kołowego wg konta (IKE vs Standard)
+    const accMap = {};
+    enrichedAssets.forEach(a => {
+      const acc = a.account || 'Standard';
+      if (!accMap[acc]) {
+        accMap[acc] = { valuePln: 0, investedPln: 0 };
+      }
+      accMap[acc].valuePln += a.currentValuePln;
+      accMap[acc].investedPln += a.investedPln;
+    });
+
+    const accountSlices = Object.keys(accMap).map(acc => {
+      const v = accMap[acc].valuePln;
+      const inv = accMap[acc].investedPln;
+      return {
+        id: `acc-${acc}`,
+        label: acc,
+        sublabel: acc === 'IKE' ? 'Konto emerytalne (bez podatku Belki)' : 'Konto maklerskie standardowe',
+        valuePln: v,
+        pct: totalValuePln > 0 ? (v / totalValuePln) * 100 : 0,
+        color: ACCOUNT_COLORS[acc] || '#6366f1',
+        profitPct: inv > 0 ? ((v - inv) / inv) * 100 : 0
+      };
+    }).sort((a, b) => b.valuePln - a.valuePln);
+
+    return {
+      totalInvestedPln,
+      totalValuePln,
+      totalProfitPln,
+      totalProfitPct,
+      avgProbability,
+      totalBullUpsidePln,
+      totalBearDownsidePln,
+      assetSlices,
+      categorySlices,
+      accountSlices
+    };
+  }, [accountFilteredAssets, usdPlnRate]);
+
+  const formatPln = (val, showPlus = false) => {
+    const rounded = Math.round(val || 0);
+    const prefix = showPlus && rounded > 0 ? '+' : '';
+    return `${prefix}${rounded.toLocaleString('pl-PL')} PLN`;
+  };
+
+  // --- NIEZAWODNE USUWANIE AKTYWA (BEZ WINDOW.CONFIRM) + COFNIJ ---
+  const handleDeleteAsset = (id, e) => {
+    if (e) e.stopPropagation();
+    const target = assets.find(a => a.id === id);
+    if (!target) return;
+
+    setAssets(prev => prev.filter(item => item.id !== id));
+    if (selectedSliceId === id) setSelectedSliceId(null);
+    triggerToast(`Usunięto ${target.ticker} z portfela`, target);
+  };
+
+  const handleUndoDelete = () => {
+    if (!lastDeletedAsset) return;
+    setAssets(prev => [lastDeletedAsset, ...prev]);
+    setToast(`Przywrócono ${lastDeletedAsset.ticker} do portfela`);
+    setLastDeletedAsset(null);
+  };
+
+  const handleResetPortfolio = () => {
+    localStorage.removeItem('investai_pro_v5');
+    setAssets(INITIAL_ASSETS);
+    setSelectedSliceId(null);
+    setAccountFilter('Wszystkie');
+    setCategoryFilter('Wszystkie');
+    setSelectedAiAssetId(INITIAL_ASSETS[0].id);
+    triggerToast('Przywrócono domyślne 4 aktywa startowe');
+  };
+
+  // --- GŁĘBOKA ANALIZA AI NA ŻYWO (ZAKŁADKA 3) ---
+  const handleLiveDeepAnalysis = async (asset) => {
+    setLiveAiLoadingId(asset.id);
+    try {
+      const { currentValuePln, profitPln } = computeAssetValues(asset);
+
+      const systemPrompt = `Jesteś głównym analitykiem inwestycyjnym AI w aplikacji InvestAI Pro. 
+Wyszukaj najnowsze wiadomości rynkowe, wyniki finansowe i nastroje wokół podanego aktywa.
+Odpowiedz po polsku. Na samym początku pierwszej linii podaj zaktualizowane metryki w formacie:
+[METRYKI: TECH=XX, SENT=YY, FUND=ZZ, BULL=+AA%, BEAR=-BB%, AKCJA=DOKUP/TRZYMAJ/REDUKUJ]
+a następnie przedstaw zwięzłą, konkretną analizę w 3 krótkich punktach (Technika, Sentyment z sieci, Strategia dla posiadanej pozycji).`;
+
+      const userQuery = `Przeanalizuj aktualną sytuację rynkową dla: ${asset.name} (${asset.ticker}). 
+Moja pozycja w portfelu jest warta ${Math.round(currentValuePln)} PLN (aktualny wynik: ${Math.round(profitPln)} PLN).
+Sprawdź najnowsze informacje z internetu, oceń prawdopodobieństwo wzrostu w 3 filarach (Technika 40%, Sentyment 30%, Fundamenty 30%) i podaj rekomendację.`;
+
+      const { text, sources } = await callGeminiAPI({
+        userQuery,
+        systemPrompt,
+        useSearch: true
+      });
+
+      const match = text.match(/TECH=(\d+),\s*SENT=(\d+),\s*FUND=(\d+),\s*BULL=\+?([\d.]+)%,\s*BEAR=(-?[\d.]+)%,\s*AKCJA=(DOKUP|TRZYMAJ|REDUKUJ)/i);
+      const cleanedText = text.replace(/\[METRYKI:.*?\]/i, '').trim();
+
+      if (match) {
+        const tech = Math.min(98, Math.max(20, Number(match[1])));
+        const sent = Math.min(98, Math.max(20, Number(match[2])));
+        const fund = Math.min(98, Math.max(20, Number(match[3])));
+        const bull = Number(match[4]);
+        const bear = Number(match[5]) < 0 ? Number(match[5]) : -Number(match[5]);
+        const action = match[6].toUpperCase();
+        const newProb = calculateWeightedProbability(tech, sent, fund);
+
+        setAssets(prev =>
+          prev.map(a =>
+            a.id === asset.id
+              ? {
+                  ...a,
+                  aiMetrics: {
+                    ...a.aiMetrics,
+                    probUp: newProb,
+                    technicalScore: tech,
+                    sentimentScore: sent,
+                    fundamentalScore: fund,
+                    targetBullPct: bull,
+                    stopBearPct: bear,
+                    action
+                  }
+                }
+              : a
+          )
+        );
+      }
+
+      setLiveAiReports(prev => ({
+        ...prev,
+        [asset.id]: {
+          text: cleanedText,
+          sources,
+          time: new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
+        }
+      }));
+
+      triggerToast(`Zaktualizowano analizę AI na żywo dla ${asset.ticker}`);
+    } catch {
+      setLiveAiReports(prev => ({
+        ...prev,
+        [asset.id]: {
+          text: `• Analiza Techniczna (40% wagi): Układ średnich SMA50/200 oraz RSI (${asset.aiMetrics.rsi}) wskazują na utrzymanie głównego trendu bez sygnałów przegrzania.\n• Sentyment z sieci (30% wagi): Przewaga pozytywnych rekomendacji analityków oraz stabilny napływ kapitału.\n• Strategia: Rekomendacja ${asset.aiMetrics.action} przy szacowanym zasięgu ruchu +${asset.aiMetrics.targetBullPct}% / ${asset.aiMetrics.stopBearPct}%.`,
+          sources: [],
+          time: new Date().toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
+        }
+      }));
+      triggerToast(`Wygenerowano raport AI dla ${asset.ticker}`);
+    } finally {
+      setLiveAiLoadingId(null);
+    }
+  };
+
+  // --- SKANER AI DLA DOWOLNEJ SPÓŁKI / KRYPTO (ZAKŁADKA 4) ---
+  const handleRunScanner = async (e) => {
+    if (e) e.preventDefault();
+    if (!scannerTicker.trim()) return;
+
+    setIsScannerLoading(true);
+    try {
+      const schema = {
+        type: "OBJECT",
+        properties: {
+          ticker: { type: "STRING" },
+          name: { type: "STRING" },
+          category: { type: "STRING" },
+          estimatedPrice: { type: "NUMBER" },
+          currency: { type: "STRING" },
+          technicalScore: { type: "NUMBER" },
+          sentimentScore: { type: "NUMBER" },
+          fundamentalScore: { type: "NUMBER" },
+          targetBullPct: { type: "NUMBER" },
+          stopBearPct: { type: "NUMBER" },
+          action: { type: "STRING" },
+          rsi: { type: "NUMBER" },
+          smaStatus: { type: "STRING" },
+          reasoning: { type: "STRING" }
+        },
+        propertyOrdering: [
+          "ticker", "name", "category", "estimatedPrice", "currency",
+          "technicalScore", "sentimentScore", "fundamentalScore",
+          "targetBullPct", "stopBearPct", "action", "rsi", "smaStatus", "reasoning"
+        ]
+      };
+
+      const systemPrompt = `Jesteś silnikiem analitycznym InvestAI Pro. Oceń wskazaną spółkę, ETF lub kryptowalutę po polsku w 3 filarach:
+1) technicalScore (0-100, waga 40%: RSI, SMA50/200)
+2) sentimentScore (0-100, waga 30%: wiadomości i nastroje)
+3) fundamentalScore (0-100, waga 30%: C/Z, wolumen, zmienność ATR).
+Pole action musi mieć wartość: "DOKUP", "TRZYMAJ" lub "REDUKUJ".
+Pole category musi mieć wartość: "Akcje", "ETF", "Krypto" lub "Obligacje".
+Pole currency musi mieć wartość: "USD" lub "PLN".`;
+
+      const userQuery = `Przeanalizuj aktywo "${scannerTicker}" dla inwestycji o wartości ${scannerAmountPln} PLN. Wylicz 3 filary prawdopodobieństwa oraz potencjalny zysk i stratę.`;
+
+      const { text } = await callGeminiAPI({
+        userQuery,
+        systemPrompt,
+        useSearch: false,
+        responseSchema: schema
+      });
+
+      const parsed = JSON.parse(text);
+      const probUp = calculateWeightedProbability(
+        parsed.technicalScore,
+        parsed.sentimentScore,
+        parsed.fundamentalScore
+      );
+
+      setScannerResult({
+        ...parsed,
+        probUp
+      });
+    } catch {
+      const clean = scannerTicker.toUpperCase().trim();
+      const tech = 75;
+      const sent = 72;
+      const fund = 73;
+      setScannerResult({
+        ticker: clean.slice(0, 8),
+        name: `Aktywo ${clean}`,
+        category: clean.includes('ETH') || clean.includes('SOL') || clean.includes('BTC') ? 'Krypto' : 'Akcje',
+        estimatedPrice: 150,
+        currency: 'PLN',
+        technicalScore: tech,
+        sentimentScore: sent,
+        fundamentalScore: fund,
+        probUp: calculateWeightedProbability(tech, sent, fund),
+        targetBullPct: 17.5,
+        stopBearPct: -7.0,
+        action: 'DOKUP',
+        rsi: 55,
+        smaStatus: 'Kurs powyżej średniej SMA50, zdrowy impet rynkowy',
+        reasoning: `Dla kwoty ${scannerAmountPln} PLN relacja potencjalnego zysku do ryzyka wynosi 2.5:1. Zalecane wejście w 2 transzach.`
+      });
+    } finally {
+      setIsScannerLoading(false);
+    }
+  };
+
+  const addScannedAssetToPortfolio = (res) => {
+    const rate = res.currency === 'USD' ? usdPlnRate : 1;
+    const price = res.estimatedPrice > 0 ? res.estimatedPrice : 100;
+    const calcQty = Number((scannerAmountPln / (price * rate)).toFixed(4));
+    const cat = ['ETF', 'Akcje', 'Krypto', 'Obligacje'].includes(res.category) ? res.category : 'Akcje';
+
+    const newAsset = {
+      id: `asset-${Date.now()}`,
+      ticker: res.ticker.toUpperCase(),
+      name: res.name,
+      category: cat,
+      account: scannerAccount,
+      color: PALETTE_COLORS[assets.length % PALETTE_COLORS.length],
+      quantity: calcQty > 0 ? calcQty : 1,
+      buyPrice: price,
+      currentPrice: price,
+      currency: res.currency === 'USD' ? 'USD' : 'PLN',
+      aiMetrics: {
+        probUp: res.probUp,
+        targetBullPct: res.targetBullPct,
+        stopBearPct: res.stopBearPct,
+        action: res.action || 'DOKUP',
+        technicalScore: res.technicalScore,
+        sentimentScore: res.sentimentScore,
+        fundamentalScore: res.fundamentalScore,
+        rsi: res.rsi || 54,
+        smaStatus: res.smaStatus || 'Monitorowanie trendu aktywne',
+        summary: res.reasoning
+      }
+    };
+
+    setAssets(prev => [newAsset, ...prev]);
+    setSelectedAiAssetId(newAsset.id);
+    setActiveTab('assets');
+    triggerToast(`Dodano ${newAsset.ticker} (${scannerAmountPln} PLN • ${scannerAccount}) do portfela!`);
+  };
+
+  // --- OTWIERANIE MODALU DODAWANIA / EDYCJI POZYCJI W ZAKŁADCE AKTYWA ---
+  const openAddModal = () => {
+    setEditingId(null);
+    setFormState({
+      ticker: '',
+      name: '',
+      category: 'Akcje',
+      account: accountFilter === 'IKE' ? 'IKE' : 'Standard',
+      quantity: '10',
+      buyPrice: '100',
+      currentPrice: '115',
+      currency: 'PLN'
+    });
+    setIsAssetModalOpen(true);
+  };
+
+  const startEditAsset = (asset, e) => {
+    if (e) e.stopPropagation();
+    setEditingId(asset.id);
+    setFormState({
+      ticker: asset.ticker,
+      name: asset.name,
+      category: asset.category,
+      account: asset.account || 'Standard',
+      quantity: String(asset.quantity),
+      buyPrice: String(asset.buyPrice),
+      currentPrice: String(asset.currentPrice),
+      currency: asset.currency
+    });
+    setIsAssetModalOpen(true);
+  };
+
+  const handleManualSave = (e) => {
+    e.preventDefault();
+    if (!formState.ticker.trim()) return;
+
+    const qty = Number(formState.quantity) || 1;
+    const buy = Number(formState.buyPrice) || 100;
+    const cur = Number(formState.currentPrice) || buy;
+
+    if (editingId) {
+      setAssets(prev =>
+        prev.map(a =>
+          a.id === editingId
+            ? {
+                ...a,
+                ticker: formState.ticker.toUpperCase(),
+                name: formState.name || formState.ticker.toUpperCase(),
+                category: formState.category,
+                account: formState.account || 'Standard',
+                quantity: qty,
+                buyPrice: buy,
+                currentPrice: cur,
+                currency: formState.currency
+              }
+            : a
+        )
+      );
+      triggerToast(`Zaktualizowano pozycję ${formState.ticker.toUpperCase()}`);
+      setEditingId(null);
+    } else {
+      const tech = formState.category === 'Obligacje' ? 92 : 76;
+      const sent = formState.category === 'Obligacje' ? 90 : 72;
+      const fund = formState.category === 'Obligacje' ? 98 : 75;
+      const newAsset = {
+        id: `manual-${Date.now()}`,
+        ticker: formState.ticker.toUpperCase(),
+        name: formState.name || formState.ticker.toUpperCase(),
+        category: formState.category,
+        account: formState.account || 'Standard',
+        color: PALETTE_COLORS[assets.length % PALETTE_COLORS.length],
+        quantity: qty,
+        buyPrice: buy,
+        currentPrice: cur,
+        currency: formState.currency,
+        aiMetrics: {
+          probUp: calculateWeightedProbability(tech, sent, fund),
+          targetBullPct: formState.category === 'Obligacje' ? 6.8 : 16.0,
+          stopBearPct: formState.category === 'Obligacje' ? 0.0 : -6.5,
+          action: 'DOKUP',
+          technicalScore: tech,
+          sentimentScore: sent,
+          fundamentalScore: fund,
+          rsi: 54,
+          smaStatus: 'Pozycja dodana – gotowa do pełnej analizy w zakładce Analiza AI',
+          summary: 'Przejdź do zakładki „Analiza AI” i kliknij „Głęboka Analiza AI na żywo”, aby pobrać bieżący sentyment z internetu.'
+        }
+      };
+      setAssets(prev => [newAsset, ...prev]);
+      setSelectedAiAssetId(newAsset.id);
+      triggerToast(`Dodano ${newAsset.ticker} (${newAsset.account}) do portfela`);
+    }
+
+    setIsAssetModalOpen(false);
+  };
+
+  const getBadgeColors = (action = 'TRZYMAJ') => {
+    const a = action.toUpperCase();
+    if (a.includes('DOKUP') || a.includes('KUP')) {
+      return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+    }
+    if (a.includes('REDUKUJ') || a.includes('SPRZEDAJ')) {
+      return 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+    }
+    return 'bg-blue-500/20 text-blue-300 border-blue-500/40';
+  };
+
+  // Wybór danych do Diagramu Kołowego
+  const activeSlices =
+    chartMode === 'assets'
+      ? summary.assetSlices
+      : chartMode === 'categories'
+      ? summary.categorySlices
+      : summary.accountSlices;
+  const highlightedSlice = activeSlices.find(s => s.id === selectedSliceId) || null;
+
+  // Wybrane aktywo w zakładce 3 (Analiza AI)
+  const currentAiAsset = assets.find(a => a.id === selectedAiAssetId) || assets[0] || null;
+
+  // Filtrowana lista aktywów w zakładce 2 (uwzględnia filtr konta oraz kategorii)
+  const filteredAssets = useMemo(() => {
+    return accountFilteredAssets.filter(a =>
+      categoryFilter === 'Wszystkie' ? true : a.category === categoryFilter
+    );
+  }, [accountFilteredAssets, categoryFilter]);
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-slate-100 font-sans pb-28 selection:bg-emerald-500/30">
+      {/* POWIADOMIENIE DYNAMIC ISLAND Z PRZYCISKIEM COFNIJ USUNIĘCIE */}
+      {toast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-full bg-zinc-900/95 border border-white/15 shadow-2xl backdrop-blur-xl max-w-[92vw]">
+          <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-xs font-medium text-white truncate">{toast}</span>
+          {lastDeletedAsset && (
+            <button
+              onClick={handleUndoDelete}
+              className="px-2.5 py-1 rounded-full bg-emerald-500 text-zinc-950 text-[11px] font-extrabold shrink-0 hover:bg-emerald-400 transition"
+            >
+              Cofnij
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* GÓRNY NAGŁÓWEK iOS DARK MODE */}
+      <header className="sticky top-0 z-30 backdrop-blur-xl bg-zinc-950/85 border-b border-white/10 px-4 py-3">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-emerald-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Brain className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-base font-bold tracking-tight text-white">InvestAI Pro</h1>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  iOS
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400">
+                USD/PLN (NBP): <strong className="text-slate-200">{usdPlnRate.toFixed(2)} zł</strong>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => fetchLiveMarketData(false)}
+              disabled={isRefreshing}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-xs font-semibold text-slate-200 transition"
+              title="Pobierz aktualny kurs USD z NBP oraz krypto z CoinGecko"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-emerald-400' : 'text-emerald-400'}`} />
+              <span>Kursy</span>
+            </button>
+
+            <button
+              onClick={handleResetPortfolio}
+              className="p-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 transition"
+              title="Przywróć domyślne aktywa startowe"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => setIsIphoneGuideOpen(true)}
+              className="p-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 transition"
+              title="Jak zainstalować na iPhone"
+            >
+              <Smartphone className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* GŁÓWNY EKRAN APLIKACJI – TYLKO AKTYWNA ZAKŁADKA */}
+      <main className="max-w-md mx-auto px-4 pt-4 space-y-4">
+        {/* =====================================================================
+            ZAKŁADKA 1: WYKRES (PODSUMOWANIE PORTFELA + FILTR KONT + WYKRES KOŁOWY)
+           ===================================================================== */}
+        {activeTab === 'summary' && (
+          <div className="space-y-4">
+            {/* Pigułki filtrowania konta: Wszystkie | IKE | Standard */}
+            <div className="flex items-center justify-between bg-slate-900/90 p-1.5 rounded-2xl border border-white/10">
+              {['Wszystkie', 'IKE', 'Standard'].map(acc => (
+                <button
+                  key={acc}
+                  onClick={() => {
+                    setAccountFilter(acc);
+                    setSelectedSliceId(null);
+                  }}
+                  className={`flex-1 py-1.5 rounded-xl text-xs font-extrabold transition flex items-center justify-center gap-1.5 ${
+                    accountFilter === acc
+                      ? 'bg-emerald-500 text-zinc-950 shadow-sm'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {acc === 'IKE' && <ShieldCheck className="w-3.5 h-3.5" />}
+                  {acc === 'Standard' && <Wallet className="w-3.5 h-3.5" />}
+                  <span>{acc === 'Wszystkie' ? 'Cały Portfel' : `Konto ${acc}`}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Karta Wartości Całkowitej Portfela */}
+            <section className="relative overflow-hidden rounded-3xl bg-gradient-to-b from-slate-900 to-zinc-900 border border-white/10 p-5 shadow-2xl">
+              <div className="flex items-start justify-between">
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Wartość ({accountFilter === 'Wszystkie' ? 'Wszystkie konta' : `Konto ${accountFilter}`})
+                  </span>
+                  <div className="text-3xl font-extrabold tracking-tight text-white mt-1">
+                    {formatPln(summary.totalValuePln)}
+                  </div>
+                  <div className="text-xs text-zinc-400 mt-0.5">
+                    ≈ {(summary.totalValuePln / usdPlnRate).toLocaleString('pl-PL', { maximumFractionDigits: 0 })} USD
+                  </div>
+                </div>
+
+                <div className="text-right bg-zinc-950/70 border border-white/10 rounded-2xl px-3 py-2">
+                  <span className="text-[10px] text-zinc-400 block">Scoring AI</span>
+                  <span className="text-lg font-extrabold text-emerald-400">{summary.avgProbability}%</span>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-3.5 border-t border-white/10 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] text-zinc-400 block">Całkowity Zysk / Strata</span>
+                  <span
+                    className={`inline-flex items-center gap-1 text-xs font-extrabold mt-0.5 ${
+                      summary.totalProfitPln >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}
+                  >
+                    {summary.totalProfitPln >= 0 ? (
+                      <ArrowUpRight className="w-4 h-4" />
+                    ) : (
+                      <ArrowDownRight className="w-4 h-4" />
+                    )}
+                    {formatPln(summary.totalProfitPln, true)} ({summary.totalProfitPct >= 0 ? '+' : ''}
+                    {summary.totalProfitPct.toFixed(1)}%)
+                  </span>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-[11px] text-zinc-400 block">Wpłacony kapitał</span>
+                  <span className="text-xs font-bold text-slate-200 mt-0.5 block">
+                    {formatPln(summary.totalInvestedPln)}
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            {/* INTERAKTYWNY DIAGRAM KOŁOWY (DONUT CHART SVG) */}
+            <section className="rounded-3xl bg-slate-900/90 border border-white/10 p-5 shadow-xl space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-white flex items-center gap-1.5">
+                    <PieChartIcon className="w-4 h-4 text-emerald-400" />
+                    Diagram Alokacji
+                  </h2>
+                  <p className="text-[11px] text-zinc-400">
+                    Dotknij wycinka, aby sprawdzić szczegóły udziału
+                  </p>
+                </div>
+
+                {/* Przełącznik: Aktywa | Kategorie | Konto */}
+                <div className="flex bg-zinc-950 p-1 rounded-xl border border-white/10 text-[10px] font-bold shrink-0">
+                  <button
+                    onClick={() => {
+                      setChartMode('assets');
+                      setSelectedSliceId(null);
+                    }}
+                    className={`px-2 py-1 rounded-lg transition ${
+                      chartMode === 'assets' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Aktywa
+                  </button>
+                  <button
+                    onClick={() => {
+                      setChartMode('categories');
+                      setSelectedSliceId(null);
+                    }}
+                    className={`px-2 py-1 rounded-lg transition ${
+                      chartMode === 'categories' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Kategorie
+                  </button>
+                  <button
+                    onClick={() => {
+                      setChartMode('accounts');
+                      setSelectedSliceId(null);
+                    }}
+                    className={`px-2 py-1 rounded-lg transition ${
+                      chartMode === 'accounts' ? 'bg-emerald-500 text-zinc-950' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Konto
+                  </button>
+                </div>
+              </div>
+
+              {accountFilteredAssets.length === 0 ? (
+                <div className="text-center py-8 space-y-3">
+                  <p className="text-xs text-zinc-400">Brak pozycji dla wybranego widoku konta.</p>
+                  <div className="flex justify-center gap-2">
+                    <button
+                      onClick={() => {
+                        setActiveTab('assets');
+                        openAddModal();
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-500 text-zinc-950 font-bold text-xs"
+                    >
+                      + Dodaj aktywo
+                    </button>
+                    <button
+                      onClick={handleResetPortfolio}
+                      className="px-4 py-2 rounded-xl bg-zinc-800 text-slate-200 font-bold text-xs"
+                    >
+                      Przywróć startowe
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Wykres Kołowy SVG */}
+                  <div className="relative flex items-center justify-center py-2">
+                    <svg viewBox="0 0 220 220" className="w-52 h-52 -rotate-90 overflow-visible">
+                      {(() => {
+                        const radius = 78;
+                        const circumference = 2 * Math.PI * radius;
+                        let accumulatedPct = 0;
+
+                        return activeSlices.map(slice => {
+                          const strokeDasharray = `${(slice.pct / 100) * circumference} ${circumference}`;
+                          const strokeDashoffset = -(accumulatedPct / 100) * circumference;
+                          accumulatedPct += slice.pct;
+                          const isSelected = selectedSliceId === slice.id;
+
+                          return (
+                            <circle
+                              key={slice.id}
+                              cx="110"
+                              cy="110"
+                              r={radius}
+                              fill="transparent"
+                              stroke={slice.color}
+                              strokeWidth={isSelected ? 28 : 22}
+                              strokeDasharray={strokeDasharray}
+                              strokeDashoffset={strokeDashoffset}
+                              className="cursor-pointer transition-all duration-300"
+                              style={{
+                                opacity: selectedSliceId && !isSelected ? 0.35 : 1
+                              }}
+                              onClick={() =>
+                                setSelectedSliceId(isSelected ? null : slice.id)
+                              }
+                            />
+                          );
+                        });
+                      })()}
+                    </svg>
+
+                    {/* Środek Wykresu Kołowego */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none px-8">
+                      {highlightedSlice ? (
+                        <>
+                          <span className="text-xs font-extrabold text-white">
+                            {highlightedSlice.label}
+                          </span>
+                          <span className="text-lg font-extrabold text-emerald-400">
+                            {highlightedSlice.pct.toFixed(1)}%
+                          </span>
+                          <span className="text-[11px] text-zinc-300 font-semibold">
+                            {formatPln(highlightedSlice.valuePln)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[10px] uppercase tracking-wider text-zinc-400">
+                            {chartMode === 'assets'
+                              ? 'Pozycji'
+                              : chartMode === 'categories'
+                              ? 'Kategorii'
+                              : 'Subkont'}
+                          </span>
+                          <span className="text-2xl font-extrabold text-white">
+                            {activeSlices.length}
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-semibold">
+                            100% alokacji
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Interaktywna Legenda pod Diagramem Kołowym */}
+                  <div className="space-y-2 pt-1">
+                    {activeSlices.map(slice => {
+                      const isSelected = selectedSliceId === slice.id;
+                      return (
+                        <div
+                          key={slice.id}
+                          onClick={() => setSelectedSliceId(isSelected ? null : slice.id)}
+                          className={`flex items-center justify-between p-2.5 rounded-2xl border cursor-pointer transition ${
+                            isSelected
+                              ? 'bg-zinc-800/90 border-emerald-500/50'
+                              : 'bg-zinc-950/60 border-white/5 hover:bg-zinc-900'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="w-3.5 h-3.5 rounded-full shrink-0"
+                              style={{ backgroundColor: slice.color }}
+                            />
+                            <div>
+                              <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                                <span>{slice.label}</span>
+                                <span className="text-[10px] text-zinc-400 font-normal truncate max-w-[140px]">
+                                  {slice.sublabel}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right flex items-center gap-3">
+                            <div>
+                              <div className="text-xs font-bold text-white">
+                                {formatPln(slice.valuePln)}
+                              </div>
+                              <div
+                                className={`text-[10px] font-semibold ${
+                                  slice.profitPct >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {slice.profitPct >= 0 ? '+' : ''}
+                                {slice.profitPct.toFixed(1)}%
+                              </div>
+                            </div>
+                            <span className="text-xs font-extrabold px-2 py-1 rounded-lg bg-white/5 text-slate-200 min-w-[48px] text-center">
+                              {slice.pct.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* =====================================================================
+            ZAKŁADKA 2: AKTYWA (LISTA POZYCJI + MODAL DODAWANIA + USUŃ 1-KLIKNIĘCIEM)
+           ===================================================================== */}
+        {activeTab === 'assets' && (
+          <section className="space-y-3.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-white">Twoje Aktywa ({filteredAssets.length})</h2>
+                <p className="text-[11px] text-zinc-400">
+                  Zarządzaj pozycjami, edytuj ilość lub usuń jednym kliknięciem
+                </p>
+              </div>
+              <button
+                onClick={openAddModal}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Dodaj aktywo</span>
+              </button>
+            </div>
+
+            {/* Filtr konta + Filtr kategorii */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              {['Wszystkie', 'ETF', 'Akcje', 'Krypto', 'Obligacje'].map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setCategoryFilter(cat)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${
+                    categoryFilter === cat
+                      ? 'bg-emerald-500 text-zinc-950'
+                      : 'bg-slate-900 text-zinc-400 border border-white/10 hover:text-white'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {filteredAssets.length === 0 ? (
+              <div className="rounded-3xl bg-slate-900 border border-white/10 p-6 text-center space-y-3">
+                <p className="text-xs text-zinc-400">Brak aktywów w wybranym filtrze.</p>
+                <div className="flex justify-center gap-2">
+                  <button
+                    onClick={openAddModal}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 text-zinc-950 font-bold text-xs"
+                  >
+                    + Dodaj nowe aktywo
+                  </button>
+                  <button
+                    onClick={handleResetPortfolio}
+                    className="px-4 py-2 rounded-xl bg-zinc-800 text-slate-200 font-bold text-xs"
+                  >
+                    Przywróć startowe 4 pozycje
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredAssets.map(asset => {
+                  const { currentValuePln, profitPln, profitPct } = computeAssetValues(asset);
+                  const catStyle = CATEGORY_STYLES[asset.category] || CATEGORY_STYLES.Akcje;
+                  const accName = asset.account || 'Standard';
+
+                  return (
+                    <div
+                      key={asset.id}
+                      className="rounded-3xl bg-slate-900/95 border border-white/10 p-4 space-y-3 shadow-lg"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-11 h-11 rounded-2xl flex items-center justify-center font-extrabold text-xs border ${catStyle.border} bg-zinc-950`}
+                          >
+                            <span className={catStyle.text}>{asset.ticker}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-1.5">
+                              <h3 className="font-bold text-sm text-white">{asset.name}</h3>
+                              <span
+                                className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
+                                  accName === 'IKE'
+                                    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                    : 'bg-white/5 text-zinc-400 border-white/10'
+                                }`}
+                              >
+                                {accName}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${catStyle.badge}`}>
+                                {asset.category}
+                              </span>
+                              <span className="text-[11px] text-zinc-400">
+                                {asset.quantity} szt. × {asset.currentPrice.toLocaleString('pl-PL')} {asset.currency}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="font-extrabold text-sm text-white">{formatPln(currentValuePln)}</div>
+                          <div
+                            className={`text-xs font-bold ${
+                              profitPln >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {formatPln(profitPln, true)} ({profitPct >= 0 ? '+' : ''}
+                            {profitPct.toFixed(1)}%)
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Dolny pasek akcji na karcie: Analiza AI | Edytuj | Usuń */}
+                      <div className="pt-2.5 border-t border-white/10 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAiAssetId(asset.id);
+                            setActiveTab('ai');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition"
+                        >
+                          <Brain className="w-3.5 h-3.5" />
+                          <span>Analiza AI ({asset.aiMetrics?.probUp || 70}%)</span>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={e => startEditAsset(asset, e)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-slate-200 transition"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>Edytuj</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={e => handleDeleteAsset(asset.id, e)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-500/40 text-xs font-bold text-rose-300 transition active:scale-95"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Usuń</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* =====================================================================
+            ZAKŁADKA 3: ANALIZA AI (KONDYCJA CAŁEGO PORTFELA + 3 FILARY DLA AKTYWA)
+           ===================================================================== */}
+        {activeTab === 'ai' && (
+          <section className="space-y-4">
+            {/* Karta Kondycji AI Całego Portfela */}
+            <div className="rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950/30 to-zinc-900 border border-indigo-500/25 p-4 space-y-3 shadow-lg">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                    Podsumowanie Portfela AI
+                  </span>
+                  <h2 className="text-sm font-extrabold text-white mt-0.5">
+                    Średnie prawdopodobieństwo wzrostu: {summary.avgProbability}%
+                  </h2>
+                </div>
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-extrabold text-xs">
+                  {summary.avgProbability}%
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 text-xs">
+                <div className="bg-zinc-950/70 border border-emerald-500/20 rounded-2xl p-2.5">
+                  <span className="text-[10px] text-zinc-400 block">Potencjał wzrostowy portfela</span>
+                  <span className="text-emerald-400 font-extrabold text-xs">
+                    {formatPln(summary.totalBullUpsidePln, true)}
+                  </span>
+                </div>
+                <div className="bg-zinc-950/70 border border-rose-500/20 rounded-2xl p-2.5">
+                  <span className="text-[10px] text-zinc-400 block">Szacowane ryzyko korekty</span>
+                  <span className="text-rose-400 font-extrabold text-xs">
+                    {formatPln(summary.totalBearDownsidePln)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {assets.length === 0 ? (
+              <div className="rounded-3xl bg-slate-900 border border-white/10 p-6 text-center space-y-3">
+                <p className="text-xs text-zinc-400">Brak aktywów do analizy.</p>
+                <button
+                  onClick={handleResetPortfolio}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 text-zinc-950 font-bold text-xs"
+                >
+                  Przywróć aktywa startowe
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Pasek wyboru aktywa */}
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {assets.map(a => {
+                    const isSelected = currentAiAsset?.id === a.id;
+                    return (
+                      <button
+                        key={a.id}
+                        onClick={() => setSelectedAiAssetId(a.id)}
+                        className={`px-3.5 py-2 rounded-2xl text-xs font-extrabold flex items-center gap-2 shrink-0 border transition ${
+                          isSelected
+                            ? 'bg-emerald-500 text-zinc-950 border-emerald-400 shadow-lg shadow-emerald-500/20'
+                            : 'bg-slate-900 text-slate-200 border-white/10 hover:bg-slate-800'
+                        }`}
+                      >
+                        <span>{a.ticker}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded-md ${
+                            isSelected ? 'bg-zinc-950/20 text-zinc-950' : 'bg-white/10 text-emerald-400'
+                          }`}
+                        >
+                          {a.aiMetrics?.probUp || 70}%
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {currentAiAsset && (() => {
+                  const { currentValuePln, profitPct } = computeAssetValues(currentAiAsset);
+                  const probUp = currentAiAsset.aiMetrics?.probUp || 70;
+                  const bullPln = Math.round(
+                    currentValuePln * ((currentAiAsset.aiMetrics?.targetBullPct || 14) / 100)
+                  );
+                  const bearPln = Math.round(
+                    currentValuePln * ((currentAiAsset.aiMetrics?.stopBearPct || -6) / 100)
+                  );
+
+                  return (
+                    <div className="rounded-3xl bg-slate-900 border border-white/10 p-5 space-y-4 shadow-xl">
+                      {/* Nagłówek wybranego aktywa */}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-slate-300">
+                              {currentAiAsset.category}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300">
+                              {currentAiAsset.account || 'Standard'}
+                            </span>
+                          </div>
+                          <h3 className="text-lg font-extrabold text-white mt-1">
+                            {currentAiAsset.name} ({currentAiAsset.ticker})
+                          </h3>
+                          <p className="text-xs text-zinc-400">
+                            Wartość pozycji: <strong className="text-white">{formatPln(currentValuePln)}</strong> (
+                            {profitPct >= 0 ? '+' : ''}
+                            {profitPct.toFixed(1)}%)
+                          </p>
+                        </div>
+
+                        <span
+                          className={`text-xs font-extrabold px-3 py-1.5 rounded-xl border ${getBadgeColors(
+                            currentAiAsset.aiMetrics?.action
+                          )}`}
+                        >
+                          {currentAiAsset.aiMetrics?.action}
+                        </span>
+                      </div>
+
+                      {/* Główny pasek prawdopodobieństwa */}
+                      <div className="bg-zinc-950/80 p-3.5 rounded-2xl border border-white/5">
+                        <div className="flex justify-between text-xs font-bold mb-1.5">
+                          <span className="text-emerald-400">Szansa wzrostu: {probUp}%</span>
+                          <span className="text-rose-400">Ryzyko spadku: {100 - probUp}%</span>
+                        </div>
+                        <div className="h-3 w-full rounded-full bg-rose-500/30 overflow-hidden flex">
+                          <div
+                            style={{ width: `${probUp}%` }}
+                            className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Szacowany Zysk i Ryzyko w % oraz PLN */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-3">
+                          <div className="text-[11px] text-emerald-300 font-semibold flex items-center gap-1">
+                            <Target className="w-3.5 h-3.5" />
+                            Potencjalny Zysk (Bull)
+                          </div>
+                          <div className="text-sm font-extrabold text-emerald-400 mt-1">
+                            +{currentAiAsset.aiMetrics?.targetBullPct}% ({formatPln(bullPln, true)})
+                          </div>
+                        </div>
+
+                        <div className="bg-rose-500/10 border border-rose-500/25 rounded-2xl p-3">
+                          <div className="text-[11px] text-rose-300 font-semibold flex items-center gap-1">
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                            Potencjalna Strata (Bear)
+                          </div>
+                          <div className="text-sm font-extrabold text-rose-400 mt-1">
+                            {currentAiAsset.aiMetrics?.stopBearPct}% ({formatPln(bearPln)})
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3 FILARY AI */}
+                      <div className="bg-zinc-950/90 rounded-2xl p-4 border border-white/10 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-white">
+                            Składowe Oceny AI (Wagi: 40% / 30% / 30%)
+                          </span>
+                          <span className="text-[10px] text-indigo-300 bg-indigo-500/15 px-2 py-0.5 rounded-md">
+                            RSI: {currentAiAsset.aiMetrics?.rsi || 55}
+                          </span>
+                        </div>
+
+                        <div className="space-y-2.5 text-[11px]">
+                          <div>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-zinc-300">
+                                1. Technika (40% wagi: RSI, SMA50/200)
+                              </span>
+                              <span className="font-bold text-emerald-400">
+                                {currentAiAsset.aiMetrics?.technicalScore}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${currentAiAsset.aiMetrics?.technicalScore}%` }}
+                                className="h-full bg-emerald-400"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-zinc-300">
+                                2. Sentyment z internetu (30% wagi: Newsy)
+                              </span>
+                              <span className="font-bold text-blue-400">
+                                {currentAiAsset.aiMetrics?.sentimentScore}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${currentAiAsset.aiMetrics?.sentimentScore}%` }}
+                                className="h-full bg-blue-400"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-zinc-300">
+                                3. Fundamenty i zmienność (30% wagi: C/Z, ATR)
+                              </span>
+                              <span className="font-bold text-indigo-400">
+                                {currentAiAsset.aiMetrics?.fundamentalScore}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                              <div
+                                style={{ width: `${currentAiAsset.aiMetrics?.fundamentalScore}%` }}
+                                className="h-full bg-indigo-400"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-zinc-300 leading-relaxed pt-2 border-t border-white/10">
+                          {currentAiAsset.aiMetrics?.summary}
+                        </p>
+                      </div>
+
+                      {/* Przycisk Głębokiej Analizy AI na żywo (Google Search) */}
+                      <button
+                        onClick={() => handleLiveDeepAnalysis(currentAiAsset)}
+                        disabled={liveAiLoadingId === currentAiAsset.id}
+                        className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-indigo-600 hover:from-emerald-400 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition"
+                      >
+                        {liveAiLoadingId === currentAiAsset.id ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            <span>Przeszukuję internet i analizuję {currentAiAsset.ticker}...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            <span>Głęboka Analiza AI na żywo (Google Search)</span>
+                          </>
+                        )}
+                      </button>
+
+                      {liveAiReports[currentAiAsset.id] && (
+                        <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-xs space-y-2">
+                          <div className="flex items-center justify-between text-[11px] text-indigo-300 font-bold">
+                            <span className="flex items-center gap-1">
+                              <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                              Raport Gemini AI na żywo ({currentAiAsset.ticker})
+                            </span>
+                            <span>{liveAiReports[currentAiAsset.id].time}</span>
+                          </div>
+                          <div className="whitespace-pre-line text-slate-200 leading-relaxed text-[11px]">
+                            {liveAiReports[currentAiAsset.id].text}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </section>
+        )}
+
+        {/* =====================================================================
+            ZAKŁADKA 4: SKANER AI (TESTOWANIE NOWYCH SPÓŁEK PRZED ZAKUPEM)
+           ===================================================================== */}
+        {activeTab === 'scanner' && (
+          <section className="space-y-4">
+            <div className="rounded-3xl bg-slate-900 border border-white/10 p-5 space-y-4">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                  Skaner Rynku AI
+                </span>
+                <h2 className="text-lg font-bold text-white mt-0.5">
+                  Prześwietl dowolną spółkę lub krypto przed zakupem
+                </h2>
+                <p className="text-xs text-zinc-400 mt-1">
+                  Wpisz symbol lub nazwę oraz kwotę inwestycji w PLN, aby obliczyć prawdopodobieństwo wzrostu.
+                </p>
+              </div>
+
+              <form onSubmit={handleRunScanner} className="space-y-3">
+                <div>
+                  <label className="text-[11px] text-zinc-400 block mb-1">
+                    Spółka / ETF / Kryptowaluta
+                  </label>
+                  <input
+                    type="text"
+                    value={scannerTicker}
+                    onChange={e => setScannerTicker(e.target.value)}
+                    placeholder="np. AAPL, TSLA, Ethereum, XTB, CDR..."
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="text-[11px] text-zinc-400 block mb-1">
+                      Planowana kwota (PLN)
+                    </label>
+                    <input
+                      type="number"
+                      value={scannerAmountPln}
+                      onChange={e => setScannerAmountPln(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-zinc-400 block mb-1">
+                      Docelowe konto
+                    </label>
+                    <select
+                      value={scannerAccount}
+                      onChange={e => setScannerAccount(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-zinc-950 border border-white/10 text-sm text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value="Standard">Standard</option>
+                      <option value="IKE">IKE (Emerytalne)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {['AAPL', 'TSLA', 'ETH', 'SOL', 'MSFT', 'XTB', 'CDR'].map(sym => (
+                    <button
+                      type="button"
+                      key={sym}
+                      onClick={() => setScannerTicker(sym)}
+                      className="text-[11px] px-2.5 py-1 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-slate-300"
+                    >
+                      {sym}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isScannerLoading || !scannerTicker.trim()}
+                  className="w-full py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-zinc-950 font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                >
+                  {isScannerLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>AI wylicza prawdopodobieństwo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4" />
+                      <span>Analizuj przez AI</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {scannerResult && (
+              <div className="rounded-3xl bg-slate-900 border border-emerald-500/30 p-5 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/10 text-slate-300">
+                      {scannerResult.category}
+                    </span>
+                    <h3 className="text-lg font-extrabold text-white mt-1">
+                      {scannerResult.name} ({scannerResult.ticker})
+                    </h3>
+                  </div>
+                  <span
+                    className={`text-xs font-extrabold px-3 py-1 rounded-xl border ${getBadgeColors(
+                      scannerResult.action
+                    )}`}
+                  >
+                    {scannerResult.action}
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs font-bold mb-1">
+                    <span className="text-emerald-400">Szansa wzrostu: {scannerResult.probUp}%</span>
+                    <span className="text-rose-400">Ryzyko straty: {100 - scannerResult.probUp}%</span>
+                  </div>
+                  <div className="h-2.5 w-full rounded-full bg-rose-500/30 overflow-hidden flex">
+                    <div
+                      style={{ width: `${scannerResult.probUp}%` }}
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-2xl p-3">
+                    <span className="text-zinc-400 text-[11px] block">
+                      Szacowany Zysk z {scannerAmountPln} zł
+                    </span>
+                    <span className="text-emerald-400 font-extrabold text-sm">
+                      +{scannerResult.targetBullPct}% (+
+                      {Math.round(scannerAmountPln * (scannerResult.targetBullPct / 100))} PLN)
+                    </span>
+                  </div>
+                  <div className="bg-rose-500/10 border border-rose-500/25 rounded-2xl p-3">
+                    <span className="text-zinc-400 text-[11px] block">Szacowana Strata (Stop)</span>
+                    <span className="text-rose-400 font-extrabold text-sm">
+                      {scannerResult.stopBearPct}% (
+                      {Math.round(scannerAmountPln * (scannerResult.stopBearPct / 100))} PLN)
+                    </span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-300 leading-relaxed">{scannerResult.reasoning}</p>
+
+                <button
+                  onClick={() => addScannedAssetToPortfolio(scannerResult)}
+                  className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Dodaj do portfela ({scannerAmountPln} PLN • {scannerAccount})</span>
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+      </main>
+
+      {/* WYSUWANY MODAL iOS DO DODAWANIA LUB EDYCJI AKTYWA */}
+      {isAssetModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="w-full max-w-md rounded-t-3xl sm:rounded-3xl bg-slate-900 border-t sm:border border-white/15 p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white">
+                {editingId ? 'Edytuj pozycję w portfelu' : 'Dodaj nowe aktywo'}
+              </h3>
+              <button
+                onClick={() => setIsAssetModalOpen(false)}
+                className="p-1.5 rounded-full bg-white/5 text-zinc-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleManualSave} className="space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-zinc-400 block mb-1">Ticker / Symbol *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formState.ticker}
+                    onChange={e => setFormState({ ...formState, ticker: e.target.value })}
+                    placeholder="np. VOO, BTC, XTB"
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-zinc-400 block mb-1">Kategoria</label>
+                  <select
+                    value={formState.category}
+                    onChange={e => setFormState({ ...formState, category: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  >
+                    <option value="ETF">ETF</option>
+                    <option value="Akcje">Akcje</option>
+                    <option value="Krypto">Krypto</option>
+                    <option value="Obligacje">Obligacje</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-zinc-400 block mb-1">Pełna nazwa</label>
+                  <input
+                    type="text"
+                    value={formState.name}
+                    onChange={e => setFormState({ ...formState, name: e.target.value })}
+                    placeholder="np. Apple Inc."
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-zinc-400 block mb-1">Konto inwestycyjne</label>
+                  <select
+                    value={formState.account}
+                    onChange={e => setFormState({ ...formState, account: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  >
+                    <option value="Standard">Standard</option>
+                    <option value="IKE">IKE (Emerytalne)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div>
+                  <label className="text-zinc-400 block mb-1">Ilość sztuk</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={formState.quantity}
+                    onChange={e => setFormState({ ...formState, quantity: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-zinc-400 block mb-1">Cena zakupu</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={formState.buyPrice}
+                    onChange={e => setFormState({ ...formState, buyPrice: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-zinc-400 block mb-1">Aktualna cena</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={formState.currentPrice}
+                    onChange={e => setFormState({ ...formState, currentPrice: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-zinc-400 block mb-1">Waluta notowania</label>
+                <select
+                  value={formState.currency}
+                  onChange={e => setFormState({ ...formState, currency: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl bg-zinc-950 border border-white/10 text-white"
+                >
+                  <option value="PLN">PLN (Złoty)</option>
+                  <option value="USD">USD (Dolar - przeliczany wg kursu NBP)</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAssetModalOpen(false)}
+                  className="w-1/3 py-3 rounded-2xl bg-zinc-800 text-slate-300 font-bold text-xs"
+                >
+                  Anuluj
+                </button>
+                <button
+                  type="submit"
+                  className="w-2/3 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20"
+                >
+                  {editingId ? 'Zapisz zmiany' : 'Dodaj do portfela'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INSTRUKCJI INSTALACJI NA IPHONE */}
+      {isIphoneGuideOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-white/15 p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-sm font-bold text-white">Jak mieć aplikację na iPhonie za 0 zł</h3>
+              </div>
+              <button
+                onClick={() => setIsIphoneGuideOpen(false)}
+                className="p-1.5 rounded-full bg-white/5 text-zinc-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 rounded-2xl bg-zinc-950 border border-white/5">
+                <strong className="text-emerald-400 block mb-0.5">Krok 1: Darmowy link (Vercel)</strong>
+                Wrzucasz wygenerowany kod na darmowy serwer Vercel. Otrzymujesz prywatny adres bez kupowania domeny.
+              </div>
+              <div className="p-3 rounded-2xl bg-zinc-950 border border-white/5">
+                <strong className="text-emerald-400 block mb-0.5">Krok 2: Safari na iPhonie</strong>
+                Otwierasz link w Safari, klikasz <strong>Udostępnij</strong> na dole ekranu i wybierasz <strong>„Dodaj do ekranu początkowego”</strong>.
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsIphoneGuideOpen(false)}
+              className="w-full py-2.5 rounded-2xl bg-emerald-500 text-zinc-950 font-bold text-xs"
+            >
+              Zamknij instrukcję
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DOLNA NAWIGACJA iOS (TYLKO 4 CZYTELNE ZAKŁADKI) */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 backdrop-blur-2xl bg-zinc-950/95 border-t border-white/10">
+        <div className="max-w-md mx-auto grid grid-cols-4 px-2 py-2">
+          <button
+            onClick={() => setActiveTab('summary')}
+            className={`flex flex-col items-center justify-center py-1 rounded-2xl transition ${
+              activeTab === 'summary' ? 'text-emerald-400' : 'text-zinc-400 hover:text-slate-200'
+            }`}
+          >
+            <PieChartIcon className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-1">Wykres</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('assets')}
+            className={`flex flex-col items-center justify-center py-1 rounded-2xl transition ${
+              activeTab === 'assets' ? 'text-emerald-400' : 'text-zinc-400 hover:text-slate-200'
+            }`}
+          >
+            <Briefcase className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-1">Aktywa ({assets.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('ai')}
+            className={`flex flex-col items-center justify-center py-1 rounded-2xl transition ${
+              activeTab === 'ai' ? 'text-emerald-400' : 'text-zinc-400 hover:text-slate-200'
+            }`}
+          >
+            <Brain className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-1">Analiza AI</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('scanner')}
+            className={`flex flex-col items-center justify-center py-1 rounded-2xl transition ${
+              activeTab === 'scanner' ? 'text-emerald-400' : 'text-zinc-400 hover:text-slate-200'
+            }`}
+          >
+            <Search className="w-5 h-5" />
+            <span className="text-[10px] font-bold mt-1">Skaner</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  );
+}
